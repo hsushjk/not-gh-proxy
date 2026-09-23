@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="favicon.png" type="image/png">
+    <title></title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #f0f2f5;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            padding: 20px 16px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 100%;
+            max-width: 820px;
+        }
+        .header {
+            padding: 16px 0 10px 0;
+            border-bottom: 2px solid #d0d7de;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 22px;
+            font-weight: 600;
+            color: #1f2328;
+            letter-spacing: -0.3px;
+            word-break: break-all;
+        }
+        .header p {
+            color: #57606a;
+            font-size: 14px;
+            margin-top: 2px;
+            word-break: break-all;
+        }
+        .fatal {
+            background: #fff5f5;
+            border: 1px solid #d73a49;
+            border-left: 4px solid #d73a49;
+            color: #d73a49;
+            padding: 14px 16px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .fatal strong {
+            display: block;
+            font-size: 15px;
+            margin-bottom: 4px;
+        }
+        .fatal .hint {
+            color: #57606a;
+            font-size: 13px;
+            margin-top: 6px;
+        }
+        .section {
+            background: #ffffff;
+            border: 1px solid #d0d7de;
+            padding: 16px 18px;
+            margin-bottom: 18px;
+        }
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #57606a;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eaeef2;
+            padding-bottom: 6px;
+        }
+        .row {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 8px;
+            align-items: center;
+        }
+        .row input {
+            flex: 1 1 auto;
+            min-width: 0;
+            padding: 6px 10px;
+            border: 1px solid #d0d7de;
+            font-size: 14px;
+            background: #ffffff;
+            outline: none;
+            font-family: inherit;
+            height: 36px;
+            width: 100%;
+        }
+        .row input:focus {
+            border-color: #0969da;
+        }
+        .row button {
+            background: #1f883d;
+            border: none;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 500;
+            padding: 0 20px;
+            cursor: pointer;
+            height: 36px;
+            font-family: inherit;
+            border: 1px solid #1a7432;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .row button:hover {
+            background: #1a7a36;
+        }
+        .row button:active {
+            background: #146c2e;
+        }
+        .result-box {
+            margin-top: 12px;
+            padding: 8px 10px;
+            background: #f6f8fa;
+            border: 1px solid #d0d7de;
+            word-break: break-all;
+            font-size: 14px;
+            min-height: 38px;
+            display: flex;
+            align-items: center;
+        }
+        .result-box a {
+            color: #0969da;
+            text-decoration: none;
+        }
+        .result-box a:hover {
+            text-decoration: underline;
+        }
+        .result-empty {
+            color: #8b949e;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+        .stat-item {
+            background: #f6f8fa;
+            padding: 10px 12px;
+            border: 1px solid #eaeef2;
+        }
+        .stat-number {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1f2328;
+            line-height: 1.2;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #57606a;
+            margin-top: 2px;
+        }
+        .stats-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 28px;
+            font-size: 14px;
+            color: #1f2328;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eaeef2;
+        }
+        .stats-row span {
+            color: #57606a;
+        }
+        .status-ok {
+            color: #1f883d;
+            font-weight: 600;
+        }
+        .status-error {
+            color: #d73a49;
+            font-weight: 600;
+        }
+        .footer {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #d0d7de;
+            font-size: 12px;
+            color: #8b949e;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+        .footer a {
+            color: #0969da;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 12px 10px;
+            }
+            .section {
+                padding: 12px 14px;
+            }
+            .header h1 {
+                font-size: 20px;
+            }
+            .header p {
+                font-size: 13px;
+            }
+            .row input {
+                font-size: 14px;
+                padding: 6px 8px;
+                height: 34px;
+            }
+            .row button {
+                font-size: 13px;
+                padding: 0 14px;
+                height: 34px;
+            }
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            .stat-item {
+                padding: 8px 10px;
+            }
+            .stat-number {
+                font-size: 18px;
+            }
+            .stats-row {
+                font-size: 13px;
+                gap: 8px 16px;
+            }
+            .result-box {
+                font-size: 13px;
+                min-height: 34px;
+                padding: 6px 8px;
+            }
+            .footer {
+                font-size: 11px;
+                flex-direction: column;
+                gap: 4px;
+                align-items: flex-start;
+            }
+        }
+
+        @media (max-width: 400px) {
+            body {
+                padding: 8px 6px;
+            }
+            .section {
+                padding: 10px 10px;
+            }
+            .row input {
+                font-size: 13px;
+                padding: 4px 6px;
+                height: 32px;
+            }
+            .row button {
+                font-size: 12px;
+                padding: 0 10px;
+                height: 32px;
+            }
+            .stat-number {
+                font-size: 16px;
+            }
+            .stat-label {
+                font-size: 11px;
+            }
+            .header h1 {
+                font-size: 18px;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <div class="fatal" id="fatalBox" style="display:none;">
+        <strong>服务未就绪</strong>
+        <span>无法加载站点配置</span>
+        <div class="hint">请通知网站所有者维护站点</div>
+    </div>
+
+    <div class="header" id="headerBox" style="display:none;">
+        <h1 id="siteTitle"></h1>
+        <p id="siteSubtitle"></p>
+    </div>
+
+    <div class="section" id="generateSection" style="display:none;">
+        <div class="section-title">输入 GitHub 链接生成加速地址</div>
+        <div class="row">
+            <input type="text" id="urlInput" placeholder="https://github.com/xxxxx，兼容raw/api/gist">
+            <button id="generateBtn">生成</button>
+        </div>
+        <div class="result-box" id="resultDisplay">
+            <span class="result-empty">输入链接后点击生成</span>
+        </div>
+    </div>
+
+    <div class="section" id="statsSection" style="display:none;">
+        <div class="section-title">服务状态</div>
+        <div id="statsContent">
+            <div style="color:#8b949e; font-size:14px;">加载中...</div>
+        </div>
+    </div>
+
+    <div class="footer" id="footerBox" style="display:none;">
+        <span>节点运行中</span>
+        <span>
+            <a id="statsLink" href="stats" target="_blank">stats</a> ·
+            <a id="healthLink" href="health" target="_blank">health</a>
+        </span>
+    </div>
+</div>
+
+<script>
+(function () {
+    var input = document.getElementById('urlInput');
+    var generateBtn = document.getElementById('generateBtn');
+    var resultDisplay = document.getElementById('resultDisplay');
+    var statsContent = document.getElementById('statsContent');
+    var siteTitleEl = document.getElementById('siteTitle');
+    var siteSubtitleEl = document.getElementById('siteSubtitle');
+    var statsLinkEl = document.getElementById('statsLink');
+    var healthLinkEl = document.getElementById('healthLink');
+
+    var fatalBox = document.getElementById('fatalBox');
+    var headerBox = document.getElementById('headerBox');
+    var generateSection = document.getElementById('generateSection');
+    var statsSection = document.getElementById('statsSection');
+    var footerBox = document.getElementById('footerBox');
+
+    function getBasePath() {
+        var p = location.pathname || '/';
+        if (p.charAt(p.length - 1) === '/') return p;
+        var last = p.substring(p.lastIndexOf('/') + 1);
+        if (last.indexOf('.') === -1) return p + '/';
+        return p.substring(0, p.lastIndexOf('/') + 1);
+    }
+
+    var BASE = getBasePath();
+
+    function showFatal() {
+        fatalBox.style.display = 'block';
+        headerBox.style.display = 'none';
+        generateSection.style.display = 'none';
+        statsSection.style.display = 'none';
+        footerBox.style.display = 'none';
+    }
+
+    function showApp(title, subtitle) {
+        document.title = title;
+        siteTitleEl.textContent = title;
+        siteSubtitleEl.textContent = subtitle || '';
+
+        fatalBox.style.display = 'none';
+        headerBox.style.display = 'block';
+        generateSection.style.display = 'block';
+        statsSection.style.display = 'block';
+        footerBox.style.display = 'flex';
+    }
+
+    function buildAccelUrl(originalUrl) {
+        if (!originalUrl || originalUrl.trim() === '') return null;
+        return location.origin + BASE + encodeURIComponent(originalUrl.trim());
+    }
+
+    function updateResult() {
+        var raw = input.value.trim();
+        if (!raw) {
+            resultDisplay.innerHTML = '<span class="result-empty">输入链接后点击生成</span>';
+            return;
+        }
+        var accel = buildAccelUrl(raw);
+        if (accel) {
+            var a = document.createElement('a');
+            a.href = accel;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.textContent = accel;
+            resultDisplay.innerHTML = '';
+            resultDisplay.appendChild(a);
+        } else {
+            resultDisplay.innerHTML = '<span class="result-empty">无效链接</span>';
+        }
+    }
+
+    generateBtn.addEventListener('click', updateResult);
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            updateResult();
+        }
+    });
+
+    function fetchStats() {
+        if (document.hidden) return;
+
+        Promise.all([
+            fetch(BASE + 'health', { cache: 'no-store' })
+                .then(function (r) { return r.json(); })
+                .catch(function () { return null; }),
+            fetch(BASE + 'stats', { cache: 'no-store' })
+                .then(function (r) { return r.json(); })
+                .catch(function () { return null; })
+        ]).then(function (results) {
+            var health = results[0];
+            var stats = results[1];
+
+            if (!health && !stats) {
+                statsContent.innerHTML = '<div style="color:#8b949e; font-size:14px;">无法获取服务状态</div>';
+                return;
+            }
+
+            var html = '';
+
+            if (health && health.status === 'ok') {
+                html += '<div style="margin-bottom:12px;"><span class="status-ok">运行正常</span>';
+                if (health.uptime !== undefined) {
+                    var uptime = Math.floor(health.uptime);
+                    var hours = Math.floor(uptime / 3600);
+                    var minutes = Math.floor((uptime % 3600) / 60);
+                    var seconds = uptime % 60;
+                    var uptimeStr = '';
+                    if (hours > 0) uptimeStr += hours + 'h ';
+                    if (minutes > 0) uptimeStr += minutes + 'm ';
+                    uptimeStr += seconds + 's';
+                    html += ' <span style="color:#57606a;font-size:13px;">| 已运行 ' + uptimeStr + '</span>';
+                }
+                if (health.startTime) {
+                    var startDate = new Date(health.startTime);
+                    html += ' <span style="color:#57606a;font-size:13px;">| 启动于 ' + startDate.toLocaleString() + '</span>';
+                }
+                html += '</div>';
+            } else {
+                html += '<div style="margin-bottom:12px;"><span class="status-error">服务异常</span></div>';
+            }
+
+            var total = stats ? stats.totalRequests : 0;
+            var proxy = stats ? stats.proxyRequests : 0;
+            var errors = stats ? stats.errors : 0;
+            var today = stats && stats.today ? stats.today : { requests: 0, proxy: 0, errors: 0 };
+
+            html += '<div class="stats-grid">';
+            html += '<div class="stat-item"><div class="stat-number">' + total + '</div><div class="stat-label">总请求</div></div>';
+            html += '<div class="stat-item"><div class="stat-number">' + proxy + '</div><div class="stat-label">代理请求</div></div>';
+            html += '<div class="stat-item"><div class="stat-number" style="color:' + (errors > 0 ? '#d73a49' : '#1f2328') + '">' + errors + '</div><div class="stat-label">错误数</div></div>';
+            html += '<div class="stat-item"><div class="stat-number">' + today.requests + '</div><div class="stat-label">今日请求</div></div>';
+            html += '</div>';
+
+            html += '<div class="stats-row">';
+            html += '<div>今日代理: <strong>' + today.proxy + '</strong></div>';
+            html += '<div>今日错误: <strong style="color:' + (today.errors > 0 ? '#d73a49' : '#1f2328') + '">' + today.errors + '</strong></div>';
+            if (health && health.timestamp) {
+                var ts = new Date(health.timestamp);
+                html += '<div>更新: <span style="color:#57606a;">' + ts.toLocaleString() + '</span></div>';
+            }
+            html += '</div>';
+
+            statsContent.innerHTML = html;
+        }).catch(function () {
+            statsContent.innerHTML = '<div style="color:#8b949e; font-size:14px;">加载统计信息失败</div>';
+        });
+    }
+
+    statsLinkEl.setAttribute('href', BASE + 'stats');
+    healthLinkEl.setAttribute('href', BASE + 'health');
+
+    fetch(BASE + 'config', { cache: 'no-store' })
+        .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        })
+        .then(function (cfg) {
+            if (!cfg) throw new Error('empty');
+            var title = cfg.siteTitle || cfg.siteName || '';
+            if (!title) throw new Error('no-title');
+            showApp(title, cfg.siteSubtitle);
+            fetchStats();
+            setInterval(fetchStats, 60000);
+            document.addEventListener('visibilitychange', function () {
+                if (!document.hidden) fetchStats();
+            });
+        })
+        .catch(function () {
+            showFatal();
+        });
+})();
+</script>
+</body>
+</html>
