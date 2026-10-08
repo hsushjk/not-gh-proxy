@@ -8,7 +8,7 @@
     "subtitle": "Powered by not-gh-proxy"
   },
   "dirs": {
-    "static": "./",
+    "static": "./public",
     "logs": "./logs"
   },
   "log": {
@@ -42,6 +42,8 @@
     "private-user-images.githubusercontent.com",
     "github.githubassets.com",
     "githubusercontent.com",
-    "githubassets.com"
+    "githubassets.com",
+    "release-assets.githubusercontent.com",
+    "github-releases.githubusercontent.com"
   ]
 }
