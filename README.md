@@ -10,7 +10,7 @@
 - 请求统计
 - 支持反向代理
 
-![example1](./example/1.png)
+<img width="914" height="650" alt="image" src="https://github.com/user-attachments/assets/6309cd09-fd92-41a1-8e85-e32a9e822f88" />
 
 ## 快速开始
 
