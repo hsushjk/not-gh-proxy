@@ -17,20 +17,18 @@
 ```bash
 git clone https://github.com/hsushjk/not-gh-proxy.git
 cd not-gh-proxy
-npm install express axios cors
+npm install express axios
 node server.js
 ```
 
 若缺失 `config.json` ，则会在同目录自动生成 ，默认监听 `0.0.0.0:3000` ，自行修改后重启 server
 
-需要自行准备 favicon
-
 浏览器打开 `http://localhost:3000` 即可。
 
 ## 依赖
 
-- Node.js 14+（推荐 16+）
-- `express`、`axios`、`cors`
+- Node.js 18+（express 5 要求）
+- `express`、`axios`
 
 ## 使用方式
 

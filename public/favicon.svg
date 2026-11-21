@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="not-gh-proxy">
+  <style>
+    .mark { stroke: #111; }
+    @media (prefers-color-scheme: dark) { .mark { stroke: #f5f5f5; } }
+  </style>
+  <g class="mark" fill="none" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 12 L28 32 L10 52"/>
+    <path d="M36 12 L54 32 L36 52"/>
+  </g>
+</svg>

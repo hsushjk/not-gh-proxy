@@ -6,7 +6,6 @@ const net = require('net');
 const dns = require('dns');
 const express = require('express');
 const axios = require('axios');
-const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { URL } = require('url');
@@ -139,20 +138,7 @@ const ALLOWED_DOMAINS = (Array.isArray(CONFIG.allowedDomains) ? CONFIG.allowedDo
   .map(function (s) { return String(s).trim().toLowerCase(); })
   .filter(Boolean);
 
-function isPrivateIp(ip) {
-  if (!ip) return true;
-  const h = String(ip).toLowerCase();
-
-  if (h.indexOf(':') !== -1) {
-    if (h === '::1' || h === '::' || h === '0:0:0:0:0:0:0:1') return true;
-    if (/^f[cd][0-9a-f]{2}:/i.test(h)) return true;
-    if (/^fe80:/i.test(h)) return true;
-    if (/^ff[0-9a-f]{2}:/i.test(h)) return true;
-    const m = h.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-    if (m) return isPrivateIp(m[1]);
-    return false;
-  }
-
+function isPrivateIpv4(h) {
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (!m) return false;
   const a = parseInt(m[1], 10);
@@ -165,6 +151,88 @@ function isPrivateIp(ip) {
   if (a === 192 && b === 0) return true;
   if (a === 198 && (b === 18 || b === 19)) return true;
   if (a >= 224) return true;
+  return false;
+}
+
+// Parse any IPv6 textual form (::, full, embedded IPv4, zone id) into 8 words.
+function parseIpv6Words(input) {
+  let s = String(input).toLowerCase();
+  const zone = s.indexOf('%');
+  if (zone !== -1) s = s.slice(0, zone);
+
+  let v4Tail = null;
+  const lastColon = s.lastIndexOf(':');
+  if (lastColon !== -1 && s.indexOf('.', lastColon) !== -1) {
+    const parts = s.slice(lastColon + 1).split('.');
+    if (parts.length !== 4) return null;
+    const nums = [];
+    for (let i = 0; i < 4; i++) {
+      if (!/^\d{1,3}$/.test(parts[i])) return null;
+      const n = Number(parts[i]);
+      if (n < 0 || n > 255) return null;
+      nums.push(n);
+    }
+    v4Tail = [(nums[0] << 8) | nums[1], (nums[2] << 8) | nums[3]];
+    s = s.slice(0, lastColon + 1) + '0:0';
+  }
+
+  const halves = s.split('::');
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const hex = /^[0-9a-f]{1,4}$/;
+  for (let i = 0; i < left.length; i++) if (!hex.test(left[i])) return null;
+  for (let i = 0; i < right.length; i++) if (!hex.test(right[i])) return null;
+
+  const missing = 8 - left.length - right.length;
+  if (halves.length === 2 && missing < 1) return null;
+  if (halves.length === 1 && missing !== 0) return null;
+
+  const words = [];
+  for (let i = 0; i < left.length; i++) words.push(parseInt(left[i], 16));
+  for (let i = 0; i < missing; i++) words.push(0);
+  for (let i = 0; i < right.length; i++) words.push(parseInt(right[i], 16));
+  if (words.length !== 8) return null;
+  if (v4Tail) {
+    words[6] = v4Tail[0];
+    words[7] = v4Tail[1];
+  }
+  return words;
+}
+
+function wordsToIpv4(w) {
+  return [w[6] >> 8, w[6] & 255, w[7] >> 8, w[7] & 255].join('.');
+}
+
+function isPrivateIp(ip) {
+  if (!ip) return true;
+  let h = String(ip).trim().toLowerCase();
+  if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
+
+  if (h.indexOf(':') === -1) return isPrivateIpv4(h);
+
+  const w = parseIpv6Words(h);
+  if (!w) return true; // fail closed on unparsable IPv6
+
+  let allZero = true;
+  for (let i = 0; i < 8; i++) if (w[i] !== 0) { allZero = false; break; }
+  if (allZero) return true; // ::
+  if (w[7] === 1 && w[0] === 0 && w[1] === 0 && w[2] === 0 && w[3] === 0 && w[4] === 0 && w[5] === 0) {
+    return true; // ::1
+  }
+
+  const firstFiveZero = w[0] === 0 && w[1] === 0 && w[2] === 0 && w[3] === 0 && w[4] === 0;
+  if (firstFiveZero && (w[5] === 0xffff || w[5] === 0)) {
+    return isPrivateIpv4(wordsToIpv4(w)); // IPv4-mapped / IPv4-compatible
+  }
+  if (w[0] === 0x2002) return isPrivateIpv4(wordsToIpv4(w)); // 6to4 2002::/16
+
+  const nat64 = w[0] === 0x0064 && w[1] === 0xff9b && w[2] === 0 && w[3] === 0 && w[4] === 0 && w[5] === 0;
+  if (nat64) return isPrivateIpv4(wordsToIpv4(w)); // 64:ff9b::/96
+
+  if ((w[0] & 0xfe00) === 0xfc00) return true; // fc00::/7 unique local
+  if ((w[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link local
+  if ((w[0] & 0xff00) === 0xff00) return true; // ff00::/8 multicast
   return false;
 }
 
@@ -211,10 +279,32 @@ function makeSecureLookup(enabled) {
 }
 
 const secureLookup = makeSecureLookup(BLOCK_PRIVATE_NETWORK);
-const httpAgent = new http.Agent({ lookup: secureLookup, keepAlive: true });
-const httpsAgent = new https.Agent({ lookup: secureLookup, keepAlive: true });
+const AGENT_OPTIONS = {
+  lookup: secureLookup,
+  keepAlive: true,
+  maxSockets: 64,
+  maxFreeSockets: 16
+};
+const httpAgent = new http.Agent(Object.assign({}, AGENT_OPTIONS));
+const httpsAgent = new https.Agent(Object.assign({}, AGENT_OPTIONS));
 
 const app = express();
+app.disable('x-powered-by');
+
+// Security headers for every response. Deliberately no CORS: this proxy is
+// same-origin for the bundled UI, and a wildcard CORS policy would let any web
+// page use it as an anonymous relay.
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+  'Permissions-Policy': 'geolocation=(), microphone=(), camera=()'
+};
+
+// Only sent for HTML we serve ourselves; proxied pages must keep their own CSP.
+const PAGE_CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; " +
+  "script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; " +
+  "form-action 'self'; frame-ancestors 'none'";
 
 if (TRUST_PROXY) {
   app.set('trust proxy', TRUST_PROXY === 'true' ? true : TRUST_PROXY);
@@ -224,18 +314,78 @@ if (ENABLE_FILE_LOG && !fs.existsSync(LOG_DIR)) {
   fs.mkdirSync(LOG_DIR, { recursive: true });
 }
 
+const SENSITIVE_QUERY_RE = /([?&])(access_token|refresh_token|id_token|client_secret|private_token|token|auth|authorization|password|passwd|secret|api_key|apikey|key|signature|sig|x-amz-signature|x-amz-credential|session|jwt|assertion|code|state)=([^&#\s"']*)/gi;
+const ENCODED_URL_PARAM_RE = /([?&]url=)([^&"\s]*)/gi;
+
+// Mask credentials in tokens, cookies, signed URLs and userinfo before logging.
+function redactUrl(input) {
+  if (typeof input !== 'string') return input;
+  const masked = input.replace(SENSITIVE_QUERY_RE, function (m, sep, name) {
+    return sep + name + '=***';
+  });
+  return masked.replace(/\/\/[^/@\s]+@/g, '//***@');
+}
+
+// Raw request URLs keep the nested target percent-encoded (?url=https%3A%2F%2F...),
+// so the plain regex above cannot see the secret inside it. Decode, mask, re-encode.
+function redactRawUrl(input) {
+  if (typeof input !== 'string') return input;
+  return input.replace(ENCODED_URL_PARAM_RE, function (m, prefix, value) {
+    let decoded = value;
+    try { decoded = decodeURIComponent(value); } catch (e) {}
+    return prefix + encodeURIComponent(redactUrl(decoded));
+  });
+}
+
+let logStream = null;
+let logStreamDate = null;
+
+function pruneLogFiles() {
+  if (!ENABLE_FILE_LOG) return;
+  fs.readdir(LOG_DIR, function (err, files) {
+    if (err || !files) return;
+    const names = files.filter(function (f) {
+      return /^(?:not-gh-proxy|ghproxy)-\d{4}-\d{2}-\d{2}\.log$/.test(f);
+    }).sort();
+    const excess = names.length - LOG_KEEP_DAYS;
+    for (let i = 0; i < excess; i++) {
+      fs.unlink(path.join(LOG_DIR, names[i]), function () {});
+    }
+  });
+}
+
+function getLogStream(dateStr) {
+  if (logStream && logStreamDate === dateStr && !logStream.destroyed) return logStream;
+  if (logStream && !logStream.destroyed) {
+    try { logStream.end(); } catch (e) {}
+  }
+  logStreamDate = dateStr;
+  logStream = fs.createWriteStream(
+    path.join(LOG_DIR, 'not-gh-proxy-' + dateStr + '.log'),
+    { flags: 'a' }
+  );
+  logStream.on('error', function () {
+    logStream = null;
+    logStreamDate = null;
+  });
+  pruneLogFiles();
+  return logStream;
+}
+
 function writeLog(level, message, data) {
   const timestamp = new Date().toISOString();
-  let logEntry = '[' + timestamp + '] [' + level + '] ' + message;
-  if (data) logEntry += ' | ' + JSON.stringify(data);
+  let logEntry = '[' + timestamp + '] [' + level + '] ' + redactRawUrl(redactUrl(message));
+  if (data) logEntry += ' | ' + redactRawUrl(redactUrl(JSON.stringify(data)));
 
-  if (CONSOLE_LOG) console.log(logEntry);
+  if (CONSOLE_LOG) {
+    if (level === 'ERROR') console.error(logEntry);
+    else if (level === 'WARN') console.warn(logEntry);
+    else console.log(logEntry);
+  }
   if (!ENABLE_FILE_LOG) return;
 
   try {
-    const dateStr = timestamp.slice(0, 10);
-    const logFile = path.join(LOG_DIR, 'not-gh-proxy-' + dateStr + '.log');
-    fs.appendFile(logFile, logEntry + '\n', 'utf8', function () {});
+    getLogStream(timestamp.slice(0, 10)).write(logEntry + '\n');
   } catch (e) {}
 }
 
@@ -306,7 +456,10 @@ function pruneDailyStats(keepDays) {
   }
 }
 
-app.use(cors());
+app.use(function (req, res, next) {
+  for (const name in SECURITY_HEADERS) res.setHeader(name, SECURITY_HEADERS[name]);
+  next();
+});
 
 app.use(function (req, res, next) {
   const startTime = Date.now();
@@ -392,11 +545,13 @@ const CREDENTIAL_HEADERS = ['authorization', 'proxy-authorization', 'cookie'];
 
 const MAX_BUFFER_BODY = 16 * 1024 * 1024;
 
-function sameHost(a, b) {
+// Credentials may only be replayed to the exact same origin (scheme + host + port).
+// Comparing hostname alone would keep Authorization on an https -> http downgrade.
+function sameOrigin(a, b) {
   try {
     const ua = new URL(a);
     const ub = new URL(b);
-    return ua.hostname.toLowerCase() === ub.hostname.toLowerCase();
+    return ua.origin === ub.origin;
   } catch (e) {
     return false;
   }
@@ -452,6 +607,13 @@ async function proxyRequest(req, res, targetUrl, options) {
     }
     return;
   }
+
+  // Abort the upstream request as soon as the client goes away, instead of
+  // letting the socket keep streaming into a dead response.
+  const controller = new AbortController();
+  res.on('close', function () {
+    if (!res.writableEnded) controller.abort();
+  });
 
   const method = (req.method || 'GET').toUpperCase();
   const hasBody = method !== 'GET' && method !== 'HEAD';
@@ -511,6 +673,12 @@ async function proxyRequest(req, res, targetUrl, options) {
     }
   }
 
+  // Streaming path used to drop Content-Length and silently switch the request
+  // to chunked encoding. Keep the client's framing when it declared a length.
+  if (hasBody && bodyData === req && req.headers['content-length'] !== undefined) {
+    baseHeaders['content-length'] = req.headers['content-length'];
+  }
+
   let currentUrl = targetUrl;
   let redirectCount = 0;
   let upstream = null;
@@ -546,6 +714,7 @@ async function proxyRequest(req, res, targetUrl, options) {
       responseType: 'stream',
       decompress: false,
       timeout: PROXY_TIMEOUT,
+      signal: controller.signal,
       maxRedirects: 0,
       validateStatus: function () { return true; },
       headers: reqHeaders,
@@ -560,6 +729,7 @@ async function proxyRequest(req, res, targetUrl, options) {
     try {
       upstream = await axios(axiosOpts);
     } catch (error) {
+      if (controller.signal.aborted) return; // client already gone
       lastError = error;
       upstream = null;
       break;
@@ -591,7 +761,7 @@ async function proxyRequest(req, res, targetUrl, options) {
       }
     } catch (e) {}
 
-    if (!sameHost(currentUrl, nextUrl)) {
+    if (!sameOrigin(currentUrl, nextUrl)) {
       for (let i = 0; i < CREDENTIAL_HEADERS.length; i++) {
         delete baseHeaders[CREDENTIAL_HEADERS[i]];
       }
@@ -623,8 +793,7 @@ async function proxyRequest(req, res, targetUrl, options) {
       if (isPrivateDns) {
         res.status(403).json({ error: 'private address not allowed', message: msg });
       } else {
-        const status = lastError && lastError.response ? lastError.response.status : 502;
-        res.status(status).json({
+        res.status(502).json({
           error: 'proxy failed',
           message: msg,
           url: targetUrl
@@ -684,9 +853,15 @@ function handleConnect(req, clientSocket, head) {
   let host, port;
   try {
     const idx = req.url.lastIndexOf(':');
+    const rawPort = idx === -1 ? '443' : req.url.slice(idx + 1);
     host = idx === -1 ? req.url : req.url.slice(0, idx);
-    port = idx === -1 ? 443 : parseInt(req.url.slice(idx + 1), 10) || 443;
+    port = /^\d{1,5}$/.test(rawPort) ? parseInt(rawPort, 10) : NaN;
   } catch (e) {
+    host = '';
+    port = NaN;
+  }
+
+  if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
     clientSocket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
     clientSocket.destroy();
     return;
@@ -721,13 +896,23 @@ function handleConnect(req, clientSocket, head) {
       }
     }
 
-    const target = net.connect(port, addresses[0].address, function () {
-      clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      if (head && head.length) target.write(head);
-      target.pipe(clientSocket);
-      clientSocket.pipe(target);
-      writeLog('INFO', 'CONNECT established: ' + host + ':' + port);
-    });
+    let target;
+    try {
+      target = net.connect(port, addresses[0].address, function () {
+        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        if (head && head.length) target.write(head);
+        target.pipe(clientSocket);
+        clientSocket.pipe(target);
+        writeLog('INFO', 'CONNECT established: ' + host + ':' + port);
+      });
+    } catch (e) {
+      stats.errors++;
+      getTodayStats().errors++;
+      writeLog('ERROR', 'CONNECT cannot connect: ' + host + ':' + port, { message: e.message });
+      clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+      clientSocket.destroy();
+      return;
+    }
 
     target.on('error', function (e) {
       stats.errors++;
@@ -751,17 +936,18 @@ function handleConnect(req, clientSocket, head) {
 
 function resolveUpgradeTarget(req) {
   const urlPath = req.url || '/';
+  const pathOnly = urlPath.split('?')[0];
 
   let isOpenMode = false;
-  let remainder = urlPath;
+  let remainder = pathOnly;
 
   if (OPEN_PROXY_PATH) {
     const exact = '/' + OPEN_PROXY_PATH;
     const prefix = exact + '/';
-    if (urlPath === exact || urlPath.indexOf(prefix) === 0) {
+    if (pathOnly === exact || pathOnly.indexOf(prefix) === 0) {
       if (!ENABLE_OPEN_PROXY) return { error: 404 };
       isOpenMode = true;
-      remainder = urlPath === exact ? '/' : urlPath.slice(exact.length);
+      remainder = pathOnly === exact ? '/' : pathOnly.slice(exact.length);
     }
   }
 
@@ -897,7 +1083,12 @@ function handleUpgrade(req, socket, head) {
     socket.on('error', function () {
       try { proxySocket.destroy(); } catch (e2) {}
     });
+    socket.on('close', function () {
+      try { proxySocket.destroy(); } catch (e2) {}
+    });
     proxySocket.on('close', function () {
+      // Tear down the client side too, otherwise half-open tunnels leak.
+      try { socket.destroy(); } catch (e2) {}
       writeLog('INFO', 'WebSocket closed: ' + targetUrl, {
         duration: (Date.now() - startTime) + 'ms'
       });
@@ -915,6 +1106,12 @@ function handleUpgrade(req, socket, head) {
     }
     resLine += '\r\n';
     try { socket.write(resLine); } catch (e) {}
+    proxyRes.on('error', function () {
+      try { socket.destroy(); } catch (e2) {}
+    });
+    socket.on('close', function () {
+      try { proxyRes.destroy(); } catch (e2) {}
+    });
     proxyRes.pipe(socket);
   });
 
@@ -968,8 +1165,7 @@ app.get('/config', function (req, res) {
     siteName: SITE_NAME,
     siteTitle: SITE_TITLE,
     siteSubtitle: SITE_SUBTITLE,
-    openProxy: ENABLE_OPEN_PROXY,
-    openProxyPath: ENABLE_OPEN_PROXY ? OPEN_PROXY_PATH : null
+    openProxy: ENABLE_OPEN_PROXY
   });
 });
 
@@ -1024,28 +1220,36 @@ app.get('/', function (req, res) {
     writeLog('INFO', 'query param proxy: ' + queryUrl);
     return proxyRequest(req, res, queryUrl, { strict: true });
   }
+  res.setHeader('Content-Security-Policy', PAGE_CSP);
   res.sendFile(path.join(STATIC_DIR, 'index.html'));
 });
 
-app.use(express.static(STATIC_DIR));
+app.use(express.static(STATIC_DIR, {
+  setHeaders: function (res, filePath) {
+    if (/\.html?$/i.test(filePath)) {
+      res.setHeader('Content-Security-Policy', PAGE_CSP);
+    }
+  }
+}));
 
 app.use(function (req, res) {
   const urlPath = req.url;
+  const pathOnly = urlPath.split('?')[0];
 
   let isOpenMode = false;
-  let remainder = urlPath;
+  let remainder = pathOnly;
 
   if (OPEN_PROXY_PATH) {
     const exact = '/' + OPEN_PROXY_PATH;
     const prefix = exact + '/';
 
-    if (urlPath === exact || urlPath.indexOf(prefix) === 0) {
+    if (pathOnly === exact || pathOnly.indexOf(prefix) === 0) {
       if (!ENABLE_OPEN_PROXY) {
-        writeLog('WARN', 'open proxy disabled: ' + urlPath);
+        writeLog('WARN', 'open proxy disabled: ' + pathOnly);
         return res.status(404).send('Not Found');
       }
       isOpenMode = true;
-      remainder = urlPath === exact ? '/' : urlPath.slice(exact.length);
+      remainder = pathOnly === exact ? '/' : pathOnly.slice(exact.length);
     }
   }
 
@@ -1089,6 +1293,17 @@ app.use(function (req, res) {
 const server = http.createServer(app);
 server.on('connect', handleConnect);
 server.on('upgrade', handleUpgrade);
+server.on('clientError', function (err, socket) {
+  if (!socket || !socket.writable || (err && err.code === 'ECONNRESET')) {
+    if (socket) socket.destroy();
+    return;
+  }
+  try {
+    socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+  } catch (e) {
+    socket.destroy();
+  }
+});
 
 server.listen(PORT, HOST, function () {
   writeLog('INFO', 'not-gh-proxy started', {
@@ -1122,4 +1337,56 @@ server.listen(PORT, HOST, function () {
 
 setInterval(function () {
   pruneDailyStats(LOG_KEEP_DAYS);
-}, 6 * 60 * 60 * 1000);
+}, 6 * 60 * 60 * 1000).unref();
+
+let shuttingDown = false;
+
+function shutdown(reason) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  try { writeLog('INFO', 'shutting down: ' + reason); } catch (e) {}
+  if (CONSOLE_LOG) console.log('[shutdown] ' + reason);
+
+  // Hard deadline: never hang forever on half-open proxy tunnels.
+  const force = setTimeout(function () { process.exit(1); }, 10000);
+  force.unref();
+
+  try { server.close(); } catch (e) {}
+  if (typeof server.closeIdleConnections === 'function') server.closeIdleConnections();
+  setTimeout(function () {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+  }, 2000).unref();
+
+  try { httpAgent.destroy(); } catch (e) {}
+  try { httpsAgent.destroy(); } catch (e) {}
+
+  setTimeout(function () {
+    if (logStream && !logStream.destroyed) {
+      try { logStream.end(); } catch (e) {}
+    }
+    process.exit(0);
+  }, 300);
+}
+
+process.on('SIGINT', function () { shutdown('SIGINT'); });
+process.on('SIGTERM', function () { shutdown('SIGTERM'); });
+
+// Last-resort safety net: log and keep serving for per-connection errors that
+// escaped a handler, instead of taking the whole proxy down.
+process.on('uncaughtException', function (err) {
+  const msg = err && err.message ? err.message : String(err);
+  try { writeLog('ERROR', 'uncaughtException: ' + msg); } catch (e) {}
+  if (err && (err.code === 'ERR_SOCKET_BAD_PORT' ||
+              err.code === 'ECONNRESET' ||
+              err.code === 'EPIPE' ||
+              err.code === 'ERR_STREAM_PREMATURE_CLOSE')) {
+    return;
+  }
+  shutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', function (reason) {
+  const msg = reason && reason.message ? reason.message : String(reason);
+  try { writeLog('ERROR', 'unhandledRejection: ' + msg); } catch (e) {}
+});
